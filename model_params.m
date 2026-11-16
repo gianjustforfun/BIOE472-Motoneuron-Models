@@ -2,8 +2,8 @@ function p = model_params(condition)
 % MODEL_PARAMS Calibrated parameters for SOL-like and TA-like motoneurons.
 % Based on the six-state Molkov model (Kv1.2 removed: gKv1 = 0).
 % Units: ms, mV, uA/cm^2, mS/cm^2, uF/cm^2, mM.
-% SOL was manually calibrated; TA was optimized numerically. Neither set
-% is a direct measurement of motoneuron channel conductances.
+% Both SOL-like and TA-like models were calibrated numerically.
+% Fitted parameters are model estimates, not direct measurements.
 
 % Shared conductances, capacitance, reversal potentials (Molkov code).
 % Note: gCaL = 0.01 in the repository; the article also lists 0.05.
