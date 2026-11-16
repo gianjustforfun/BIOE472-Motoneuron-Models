@@ -35,13 +35,6 @@ if any(V > 0)
 else
     sp = [];
 end
-% Detect spikes only if the voltage exceeds 0 mV.
-% No spikes are expected during passive or subthreshold tests.
-if any(V > 0)
-    [~,sp] = findpeaks(V,t,'MinPeakHeight',0);
-else
-    sp = [];
-end
 
 r.t = t;
 r.V = V;
