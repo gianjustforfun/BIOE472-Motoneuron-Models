@@ -1,93 +1,125 @@
 # SOL-like motoneuron fitting
 
-Independent numerical fitting workflow for the **SOL-like motoneuron** in BIOE 472. It follows the same model, three optimized parameters, stimulus, numerical solver, spike detection, and objective-function structure as the TA-like fitting. This is **Option A**, an exploratory comparison: a successful fit is not guaranteed.
+Independent numerical calibration of the **SOL-like motoneuron** for the BIOE 472 project. This workflow calibrates a six-state, single-compartment conductance-based model adapted from Molkov et al. (2025) against the SOL-associated **cluster 1** electrophysiological targets from Hadzipasic et al. (2014).
 
-## Run
+The SOL and TA fitting scripts use the **same three adjustable parameters**, ionic equations, stimulation protocol, and objective-function structure. They are run separately and **are not called by the root `main.m`**.
 
-Set MATLAB's **Current Folder** to `fitting_SOL`, then execute:
+## How to run
+
+Open `fitting_SOL/` as MATLAB's **Current Folder** and execute:
 
 ```matlab
 main_fitting
 ```
 
-**Requirements:** MATLAB and Signal Processing Toolbox for `findpeaks`. `fminsearch` does not require Optimization Toolbox. Each objective evaluation runs multiple ODE simulations, so the fit may be computationally expensive. Do not run `main_fitting` in another fitting folder at the same time unless using separate MATLAB sessions.
+The fitter saves `results/SOL_matlab_fitting.mat` in this folder. Running it **does not update** the fixed SOL parameters stored in the parent `model_params.m`; those must be transferred explicitly if a new solution is adopted.
+
+**Software:** MATLAB and Signal Processing Toolbox (`findpeaks`). The optimizer `fminsearch` is included with MATLAB and does not require Optimization Toolbox. Fitting can take time because each objective evaluation runs several ODE simulations.
+
+Do not recursively add both fitting folders to the MATLAB path: they contain functions with identical names (`dyn.m`, `run_protocol.m`, and others).
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `main_fitting.m` | Two-start Nelder–Mead optimization, targets, fitting loss, passive calibration, and export |
-| `fit_params.m` | Build an SOL-like candidate from the three trial parameters |
-| `find_rheobase.m` | Bracket and bisect the minimum 500-ms stimulation current producing a spike |
-| `dyn.m` | Six-state ionic ODEs, unchanged from the TA fitting reference |
-| `run_protocol.m` | Rectangular current steps, `ode15s`, and `findpeaks`, unchanged from the TA reference |
+| `main_fitting.m` | Two-start `fminsearch` fitting, passive calibration, objective, and MAT export |
+| `fit_params.m` | Constructs a SOL-like candidate from the three fitted parameters |
+| `find_rheobase.m` | Estimates the 500-ms numerical rheobase by bracketing and binary search |
+| `dyn.m` | Six-state ionic ODEs, shared in structure with the TA-like model |
+| `run_protocol.m` | Integrates rectangular current steps with `ode15s` and detects spikes |
 
-## Model and assumptions
+## Model and fitted parameters
 
-The model is the six-state reduction of Molkov et al. (2025), without Kv1.2, using the same fixed conductances and calcium equations as the TA workflow. To test the **same three-parameter fitting approach**, the SOL fitting holds `gKdr = 100 mS/cm²`, the original Molkov value, just as in the TA fit. **This differs from the previous manually calibrated SOL model**, which held `gKdr = 60 mS/cm²`. The outcome of this new approach must therefore be evaluated before replacing SOL parameters in the main simulation.
+The modeled currents are NaF, NaP, Kdr, CaL, KCa, CAN, and leak; the Kv1.2 term is omitted. The model includes membrane voltage, intracellular calcium, and four gating states. The calcium variable uses an effective 250-ms time constant incorporating calcium-induced calcium release phenomenologically, without an explicit intracellular store.
 
-The optimized parameter vector is:
+The vector fitted with `fminsearch` is:
 
 ```text
 theta = [hRate, nRate, gKCa]
 ```
 
-| Parameter | Search bounds | Meaning |
+| Parameter | Search bounds | Role |
 |---|---:|---|
-| `hRate` | 0.2–6 | NaF inactivation / recovery speed multiplier |
-| `nRate` | 0.1–10 | Kdr activation / deactivation speed multiplier |
-| `gKCa` | 0.65–3.5 mS/cm² | Calcium-activated potassium conductance |
+| `hRate` | 0.2–6 | Multiplies NaF inactivation **and recovery** rates |
+| `nRate` | 0.1–10 | Multiplies Kdr activation **and deactivation** rates |
+| `gKCa` | 0.65–3.5 mS/cm² | Maximal calcium-activated K+ conductance |
 
-The TA fit used `hRate = 1–6` and `nRate = 1–10`. Lower values are permitted here because the earlier SOL configuration used **slower** Kdr kinetics (`nRate = 0.30`). The optimized parameters remain the same three quantities. Bounds are practical search choices, **not measured physiological limits**.
+The two initial guesses are `[1, 0.30, 0.78]` and `[1, 1, 1.185]`. The fitting holds `gKdr = 100 mS/cm²`, as in the TA-like workflow. This differs from an earlier **manual** SOL calibration that used `gKdr = 60 mS/cm²`; that earlier parameterization is not the final one. The bounds, starting points, and kinetic multipliers are phenomenological modeling choices, not measured physiological ranges.
 
-Two optimization starting points are used: `[1, 0.30, 0.78]` and `[1, 1, 1.185]`. The first reuses the kinetic and KCa settings of the earlier SOL calibration, **but not its different gKdr**; consequently, it is not guaranteed to reproduce the prior SOL result.
+Both phenotypes share `gNaP = 0.01` and `gCAN = 1.05 mS/cm²` in the final project. These are assumed model conductances, not SOL- or TA-specific experimental measurements. `gCaL = 0.01 mS/cm²` follows the original model repository's code; the paper also reports `0.05 mS/cm²`.
 
 ## Experimental targets
 
-Hadzipasic et al. (2014), SOL-associated cluster 1:
+Targets for the SOL-associated cluster 1 in Hadzipasic et al. (2014):
 
-| Property | Target | Treatment |
+| Quantity | Target | How it is used |
 |---|---:|---|
-| Resting potential | −70.3 mV | Set as an equilibrium target |
-| Membrane time constant | 8.9 ms | Calibrate leak (`gL`) and penalize error |
-| Input resistance | 95.4 MΩ | Determine effective electrical area |
-| First interspike firing frequency (FIF) | 45.9 Hz | Used through FIF/SSF ratio |
+| Resting potential | −70.3 mV | Imposed equilibrium by deriving leak reversal potential `EL` |
+| Input resistance | 95.4 MΩ | Determines an **effective electrical area** |
+| Membrane time constant | 8.9 ms | Guides leak conductance `gL` calibration and objective penalty |
+| First interspike firing frequency (FIF) | 45.9 Hz | Entered through the FIF/SSF ratio |
 | Last interspike firing frequency (SSF) | 31.9 Hz | Objective target |
 | FIF/SSF | 45.9/31.9 ≈ 1.44 | Objective target |
 
-The effective area is a fitting construct, not a direct anatomical area measurement. The resting reversal potential `EL` is derived to enforce zero net membrane current at the target rest voltage.
+Resting voltage, input resistance, and time constant are fitted or imposed targets, **not independent validation results**. The effective electrical area is a calibration construct, not a measured anatomical area.
 
-## Fitting protocol
+## Calibration protocol
 
-1. `fminsearch` evaluates two initial guesses and applies a large penalty to candidates outside the chosen bounds.
-2. For each candidate, `fit_params.m` constructs an SOL-like neuron and `gL` is adjusted using a **−0.05 µA/cm², 300-ms** hyperpolarizing step to approximately match `tau = 8.9 ms`.
-3. The electrical area is calculated to reproduce `Rin = 95.4 MΩ`.
-4. `find_rheobase.m` estimates the minimum current eliciting a spike in 500 ms.
-5. `run_protocol.m` simulates **1500 ms baseline + 500 ms at 3× its own rheobase + 1800 ms recovery**, using `ode15s` and `findpeaks` (voltage peak above 0 mV).
-6. FIF and SSF are computed as 1000 divided by the first and last interspike intervals, respectively. Candidates with fewer than 8 spikes or any pre/post firing are rejected.
-7. The valid candidate with the lowest objective value is reported and saved.
+1. For a trial `theta`, construct an equilibrium at the experimental resting voltage and adjust `gL` using three corrections based on a **−0.05 µA/cm², 300-ms** hyperpolarizing pulse.
+2. Calculate effective area from the target input resistance.
+3. Estimate the rheobase for a **500-ms** current step, defined numerically as the smallest tested input eliciting a detected voltage peak above 0 mV.
+4. Simulate **1500 ms at zero current, 500 ms at 3 × the candidate's own rheobase, and 1800 ms at zero current**.
+5. Detect spikes using `findpeaks` with a 0-mV *peak-detection cutoff*. This is not the physiological excitation threshold. Compute FIF and SSF as `1000/ISI`, using the first and last within-pulse interspike intervals (ISI in ms).
+6. Accept candidates with **at least three within-pulse spike peaks and no prestimulus spike peaks**. **Poststimulus spikes are recorded but do not disqualify the candidate.** Three peaks are the mathematical minimum for separate first and last ISIs; this is not a physiological spike-count threshold.
+7. Apply the common objective below from two initial guesses. Save the valid result with the lowest loss.
+
+The updated criterion above replaces an earlier, more restrictive rule requiring at least eight spike peaks and no poststimulus firing.
 
 ## Objective function
 
-The *same form and weights* as in the TA fitting are retained, substituting SOL targets:
+The same functional form and weights are used in the SOL and TA fitting workflows:
 
 ```text
 J = [2 ln((FIF/SSF)/(45.9/31.9))]^2
   + [1.2 ln(SSF/31.9)]^2
-  + 0.035 [(ln hRate)^2 + (ln nRate)^2 + (ln(gKCa/1.185))^2]
   + 10 [ln(tau/8.9)]^2
+  + 0.035 [(ln hRate)^2 + (ln nRate)^2 + (ln(gKCa/1.185))^2]
 ```
 
-The weights and `gKCa = 1.185 mS/cm²` regularization reference were inherited from the TA procedure for a direct methodological comparison. **They are choices, not experimental SOL-specific estimates.** This is a local optimization with a limited number of evaluations, so it may fail to find a good or unique fit.
+The squared logarithms penalize relative mismatches. The weights and reference `gKCa = 1.185 mS/cm²` are modeling choices. The optimization is local and does not establish uniquely identifiable ionic parameters.
 
-## Output
+## Current adopted solution
 
-Results are saved to `results/SOL_matlab_fitting.mat`. Output variables include `bestTheta`, `bestLoss`, final parameter structure `p` (including `p.rheobase`), `rh`, passive properties, FIF/SSF, both candidates, and their exit flags. The script **does not automatically update the model in the parent folder**.
+The fixed values currently recorded in the parent `model_params.m` (from the updated fitting without the poststimulus exclusion) are:
 
-After running, compare predicted FIF, SSF, ratio and spike counts with the experimental targets and with the prior SOL simulation. If this approach fits poorly, the alternative is to fit `[gKdr, nRate, gKCa]` while holding `hRate = 1` (Option B), rather than silently changing the present code.
+| Parameter / result | SOL-like |
+|---|---:|
+| `hRate` | 0.8831005817202662 |
+| `nRate` | 0.3519733081847274 |
+| `gKCa` (mS/cm²) | 0.8335601089772888 |
+| `gL` (mS/cm²) | 0.10448386558117018 |
+| Effective area (cm²) | 9.566538424497626e-05 |
+| Numerical rheobase (µA/cm²) | 0.86181640625 |
+| FIF (Hz), main simulation | 48.92 |
+| SSF (Hz), main simulation | 33.37 |
+| Spikes before / during / after | 0 / 19 / 0 |
+
+The adopted model reproduces SOL-like firing rates relatively closely, but this is a numerical fit, not a unique physiological identification. Changes to the fitting settings may yield a different local optimum. Compare any new run with these values before modifying `model_params.m`.
+
+## Output and interpretation
+
+`results/SOL_matlab_fitting.mat` contains the selected parameter vector (`bestTheta`), its objective (`bestLoss`), fitted parameter structure `p` (including `p.rheobase`), rheobase `rh`, passive measurements, FIF and SSF, the two candidate solutions, their losses, and exit flags.
+
+To reproduce the final *main* simulations and the eight-condition NaP/CAN experiment, return to the repository root and run:
+
+```matlab
+main
+```
+
+The root `main.m` calls `compare_PIC()` automatically. It **does not rerun this fitter**.
 
 ## References
 
-- Molkov et al. (2025). *Ionic mechanisms underlying bistability in spinal motoneurons: insights from a computational model*. DOI: https://doi.org/10.3389/fncel.2025.1710893
-- Model source: https://github.com/jeterlab/ionic-mechanisms-underlying-bistability-in-spinal-motoneurons
-- Hadzipasic et al. (2014). Experimental data for SOL-associated motoneuron cluster 1.
+- Molkov et al. (2025), *Ionic mechanisms underlying bistability in spinal motoneurons: insights from a computational model*. https://doi.org/10.3389/fncel.2025.1710893
+- Original ionic model code: https://github.com/jeterlab/ionic-mechanisms-underlying-bistability-in-spinal-motoneurons
+- Hadzipasic et al. (2014), experimental target properties for the SOL-associated cluster 1.
